@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from models import PatientIntake, BookingRequest
 from session_store import create_session, get_session, update_session
 from data.doctors import DOCTORS
+from services.ai_service import match_doctor
 import uuid
 
 router = APIRouter()
@@ -13,6 +14,7 @@ async def intake(data: PatientIntake):
     try:
         session_id = str(uuid.uuid4())
         create_session(session_id)
+        matched_doctor = await match_doctor(data.reason) if data.reason else None
         update_session(
             session_id,
             patient_info={
@@ -23,6 +25,7 @@ async def intake(data: PatientIntake):
                 "email": data.email,
                 "reason": data.reason,
             },
+            matched_doctor=matched_doctor,
             sms_opt_in=data.sms_opt_in,
             intake_complete=True,
         )
@@ -47,6 +50,15 @@ async def get_slots(session_id: str):
         return {"doctor": doctor["name"], "specialty": doctor["specialty"], "slots": available}
     except Exception as exc:
         return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+@router.get("/api/test-email/{email}")
+async def test_email(email: str):
+    from services.email_service import send_confirmation_email
+    result = await send_confirmation_email(
+        email, "Test", "Dr. Test", "2026-01-01", "9:00 AM", "123 Test St"
+    )
+    return result
 
 
 @router.post("/api/book")

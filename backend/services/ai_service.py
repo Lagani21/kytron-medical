@@ -1,40 +1,52 @@
 import asyncio
 import re
+import os
+import httpx
 from datetime import datetime
 from data.doctors import DOCTORS
 from session_store import get_session, update_session
 
-SPECIALTY_KEYWORDS = {
-    "chen": [
-        "heart", "cardiology", "chest pain", "palpitation", "blood pressure",
-        "hypertension", "shortness of breath", "cardiac", "arrhythmia",
-    ],
-    "webb": [
-        "knee", "hip", "shoulder", "back", "joint", "bone", "orthopedic",
-        "fracture", "arthritis", "spine", "wrist", "ankle", "elbow", "arm",
-        "broke", "broken", "sprain", "torn", "tendon", "ligament",
-    ],
-    "nair": [
-        "skin", "rash", "acne", "mole", "eczema", "dermatology",
-        "psoriasis", "itching", "hives", "lesion",
-    ],
-    "okafor": [
-        "headache", "migraine", "dizziness", "nerve", "numbness", "neurology",
-        "seizure", "tremor", "vertigo", "tingling",
-    ],
-}
+_SYSTEM_PROMPT = """You are a medical intake assistant. Given a patient's symptom description, determine which specialist they should see.
+
+Available specialists:
+- chen: Cardiology — heart problems, chest pain, palpitations, high blood pressure, shortness of breath, irregular heartbeat
+- webb: Orthopedics — bone, joint, or muscle issues, back pain, knee/shoulder/hip pain, fractures, sprains, arthritis
+- nair: Dermatology — skin conditions, rashes, acne, moles, eczema, psoriasis, itching, hives
+- okafor: Neurology — headaches, migraines, dizziness, nerve pain, numbness, seizures, tremors, vertigo
+
+Reply with ONLY one of these exact IDs: chen, webb, nair, okafor
+Reply with ONLY "none" if the description is too vague, unrelated to these specialties, or needs more clarification to decide."""
 
 
-def match_doctor(text: str):
-    text_lower = text.lower()
-    best_id = None
-    best_count = 0
-    for doctor_id, keywords in SPECIALTY_KEYWORDS.items():
-        count = sum(1 for kw in keywords if kw in text_lower)
-        if count > best_count:
-            best_count = count
-            best_id = doctor_id
-    return best_id if best_count > 0 else None
+async def match_doctor(text: str) -> str | None:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": text},
+                    ],
+                    "max_tokens": 10,
+                    "temperature": 0,
+                },
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            result = response.json()["choices"][0]["message"]["content"].strip().lower()
+            return result if result in DOCTORS else None
+    except Exception:
+        return None
 
 
 async def stream_response(text: str):
@@ -72,14 +84,12 @@ async def get_ai_response(session_id: str, user_message: str):
             yield chunk
         return
 
-    # Get matched doctor from session
-    doctor_id = session.get("matched_doctor")
-
-    # Try to match a doctor from the message if not already matched
-    if not doctor_id:
-        doctor_id = match_doctor(user_message)
-        if doctor_id:
-            update_session(session_id, matched_doctor=doctor_id)
+    # Try to match a doctor from the current message first; fall back to session cache
+    doctor_id = await match_doctor(user_message)
+    if doctor_id:
+        update_session(session_id, matched_doctor=doctor_id)
+    else:
+        doctor_id = session.get("matched_doctor")
 
     doctor = DOCTORS.get(doctor_id) if doctor_id else None
 
@@ -123,7 +133,7 @@ async def get_ai_response(session_id: str, user_message: str):
     # Show available slots
     if any(kw in msg_lower for kw in ["available", "slot", "appointment", "schedule", "show", "see", "when", "time"]):
         if not doctor:
-            doctor_id = match_doctor(user_message)
+            doctor_id = await match_doctor(user_message)
             if not doctor_id:
                 async for chunk in stream_response(
                     "I'd like to help you schedule an appointment. Could you describe your symptoms "
@@ -205,7 +215,7 @@ async def get_ai_response(session_id: str, user_message: str):
                 from services.sms_service import send_confirmation_sms
 
                 patient = session["patient_info"]
-                await send_confirmation_email(
+                email_result = await send_confirmation_email(
                     patient["email"],
                     patient["first_name"],
                     doctor["name"],
@@ -218,7 +228,10 @@ async def get_ai_response(session_id: str, user_message: str):
                         patient["phone"], doctor["name"], slot_date, slot_time
                     )
 
-                email_line = f"Email confirmation sent to: {patient['email']}"
+                if email_result.get("status") in ("sent", "stub"):
+                    email_line = f"Email confirmation sent to: {patient['email']}"
+                else:
+                    email_line = f"Note: Email confirmation could not be sent ({email_result.get('message', 'unknown error')})"
                 sms_line = (
                     f"\nText confirmation sent to: {patient['phone']}"
                     if session.get("sms_opt_in")
@@ -251,9 +264,6 @@ async def get_ai_response(session_id: str, user_message: str):
             return
 
     # General symptom matching
-    if not doctor_id:
-        doctor_id = match_doctor(user_message)
-
     if doctor_id:
         update_session(session_id, matched_doctor=doctor_id)
         doctor = DOCTORS[doctor_id]
