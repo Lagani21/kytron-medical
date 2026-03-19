@@ -28,15 +28,82 @@ async def voice_initiate(req: VoiceCallRequest):
     session = get_session(req.session_id)
     if not session:
         return JSONResponse(status_code=404, content={"error": "Session not found"})
+    doctor_id = session.get("matched_doctor")
+    if not doctor_id:
+        reason = session.get("patient_info", {}).get("reason", "")
+        if reason:
+            from services.ai_service import match_doctor
+            doctor_id = await match_doctor(reason)
+            if doctor_id:
+                update_session(req.session_id, matched_doctor=doctor_id)
+    doctor = DOCTORS.get(doctor_id) if doctor_id else None
+    matched_doctor_name = f"{doctor['name']} ({doctor['specialty']})" if doctor else None
+
     result = await initiate_voice_call(
         req.phone_number,
         req.session_id,
         history=session.get("conversation_history", []),
         patient=session.get("patient_info", {}),
-        matched_doctor=session.get("matched_doctor"),
+        matched_doctor=matched_doctor_name,
         booked_slot=session.get("booked_slot"),
     )
     return result
+
+
+# ─── 1b. VAPI end-of-call webhook ────────────────────────────────────────────
+
+@router.post("/api/voice/end-of-call")
+async def voice_end_of_call(request: Request):
+    body = await request.json()
+    msg  = body.get("message", {})
+
+    if msg.get("type") != "end-of-call-report":
+        return {"status": "ignored"}
+
+    structured = msg.get("analysis", {}).get("structuredData", {})
+    call       = msg.get("call", {})
+    session_id = call.get("metadata", {}).get("session_id") or \
+                 (call.get("customer", {}).get("number") and
+                  get_session_id_by_phone(call["customer"]["number"]))
+
+    if not structured.get("appointment_confirmed"):
+        logger.info("End-of-call: no appointment confirmed")
+        return {"status": "no_booking"}
+
+    doctor_id = structured.get("doctor_id")
+    slot_date = structured.get("date")
+    slot_time = structured.get("time")
+    doctor    = DOCTORS.get(doctor_id) if doctor_id else None
+
+    if not session_id or not doctor or not slot_date or not slot_time:
+        logger.warning(f"End-of-call: missing data — session={session_id} doctor={doctor_id} date={slot_date} time={slot_time}")
+        return {"status": "missing_data"}
+
+    session = get_session(session_id)
+    if not session:
+        logger.warning(f"End-of-call: session {session_id} not found")
+        return {"status": "session_not_found"}
+
+    # Mark slot as booked
+    for slot in doctor["slots"]:
+        if slot["date"] == slot_date and slot["time"] == slot_time and slot["status"] == "available":
+            slot["status"] = "booked"
+            update_session(session_id, booked_slot={"date": slot_date, "time": slot_time, "doctor_id": doctor_id})
+            break
+
+    # Send confirmation email + SMS
+    patient = session.get("patient_info", {})
+    from services.email_service import send_confirmation_email
+    from services.sms_service import send_confirmation_sms
+    await send_confirmation_email(
+        patient.get("email", ""), patient.get("first_name", ""),
+        doctor["name"], slot_date, slot_time, doctor["office"]
+    )
+    if session.get("sms_opt_in"):
+        await send_confirmation_sms(patient.get("phone", ""), doctor["name"], slot_date, slot_time)
+
+    logger.info(f"End-of-call booking confirmed: {doctor['name']} {slot_date} {slot_time} → {patient.get('email')}")
+    return {"status": "ok"}
 
 
 # ─── 2. TwiML webhook — Twilio fetches this when the patient picks up ────────

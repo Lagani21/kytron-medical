@@ -5,9 +5,9 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-VAPI_API_KEY     = os.getenv("VAPI_API_KEY")
-VAPI_PHONE_ID    = os.getenv("VAPI_PHONE_ID")
-VAPI_WORKFLOW_ID = os.getenv("VAPI_WORKFLOW_ID")
+VAPI_API_KEY  = os.getenv("VAPI_API_KEY")
+VAPI_PHONE_ID = os.getenv("VAPI_PHONE_ID")
+BASE_URL      = os.getenv("BASE_URL", "")
 
 
 def _to_e164(phone: str) -> str:
@@ -91,9 +91,10 @@ async def initiate_voice_call(
     history = history or []
     patient = patient or {}
 
-    e164         = _to_e164(phone_number)
-    name         = patient.get("first_name", "")
+    e164          = _to_e164(phone_number)
+    name          = patient.get("first_name", "")
     system_prompt = _build_system_prompt(patient, history, matched_doctor, booked_slot)
+    system_prompt += f"\n\nSESSION_ID (pass this to book_appointment): {session_id}"
 
     if name and matched_doctor:
         first_message = f"Hi {name}, I'm your Kyron Medical assistant, picking up right where our chat left off. I have your details on file — let me help you get that appointment scheduled."
@@ -105,21 +106,51 @@ async def initiate_voice_call(
     try:
         payload = {
             "phoneNumberId": VAPI_PHONE_ID,
-            "workflowId":    VAPI_WORKFLOW_ID,
             "customer": {
                 "number": e164,
             },
-            "assistantOverrides": {
+            "assistant": {
                 "firstMessage": first_message,
-                "variableValues": {
-                    "session_id":      session_id,
-                    "patient_name":    name,
-                    "reason":          patient.get("reason", ""),
-                    "matched_doctor":  str(matched_doctor) if matched_doctor else "",
-                    "context_summary": system_prompt,
+                "silenceTimeoutSeconds": 10,
+                "responseDelaySeconds": 0.5,
+                "model": {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "messages": [
+                        {"role": "system", "content": system_prompt}
+                    ],
+                },
+                "voice": {
+                    "provider": "openai",
+                    "voiceId": "alloy",
+                },
+                "transcriber": {
+                    "provider": "deepgram",
+                    "model": "nova-2",
+                    "language": "en",
+                },
+                "server": {"url": f"{BASE_URL}/api/voice/end-of-call"},
+                "analysisPlan": {
+                    "structuredDataPrompt": (
+                        "Extract booking details if an appointment was confirmed during this call. "
+                        "Return null for any field not mentioned."
+                    ),
+                    "structuredDataSchema": {
+                        "type": "object",
+                        "properties": {
+                            "appointment_confirmed": {"type": "boolean"},
+                            "doctor_id":  {"type": "string", "description": "chen, webb, nair, or okafor"},
+                            "date":       {"type": "string", "description": "YYYY-MM-DD"},
+                            "time":       {"type": "string", "description": "e.g. 9:00 AM"},
+                        },
+                        "required": ["appointment_confirmed"]
+                    }
                 },
             },
         }
+
+        logger.info(f"VAPI payload firstMessage: {first_message}")
+        logger.info(f"VAPI system_prompt preview: {system_prompt[:300]}")
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
