@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Phone, PhoneOff } from 'lucide-react'
-import { ENDPOINTS } from '../config.js'
+import { ENDPOINTS, API_HEADERS } from '../config.js'
 
 export default function CallMeButton({ sessionId, phone }) {
   const [showModal, setShowModal] = useState(false)
@@ -18,7 +18,7 @@ export default function CallMeButton({ sessionId, phone }) {
     try {
       const res = await fetch(ENDPOINTS.voiceInitiate, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: API_HEADERS,
         body: JSON.stringify({ session_id: sessionId, phone_number: phone }),
       })
       const data = await res.json()
@@ -26,8 +26,11 @@ export default function CallMeButton({ sessionId, phone }) {
       if (data.status === 'initiated') {
         showToast('success', 'Calling you now — voice AI connected')
       } else {
-        const detail = data.message ? ` (${data.message})` : ''
-        showToast('error', `Could not place the call.${detail}`)
+        const msg = data.message || ''
+        const isLimit = msg.toLowerCase().includes('limit') || msg.toLowerCase().includes('daily')
+        showToast('error', isLimit
+          ? 'All lines are busy right now. Please try again in a little while.'
+          : 'Could not place the call. Please try again.')
       }
     } catch (err) {
       setShowModal(false)

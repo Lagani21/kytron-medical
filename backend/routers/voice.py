@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from models import VoiceCallRequest
-from session_store import get_session, update_session, get_session_id_by_phone
+from session_store import get_session, update_session
 from services.voice_service import initiate_voice_call, build_assistant_config
 from data.doctors import DOCTORS
 
@@ -130,74 +130,6 @@ async def voice_end_of_call(request: Request):
     logger.info(f"End-of-call booking confirmed: {doctor['name']} {slot_date} {slot_time} → {patient.get('email')}")
     return {"status": "ok"}
 
-
-# ─── 3. Inbound callback — patient calls back after disconnect ───────────────
-
-@router.post("/api/voice/inbound")
-async def voice_inbound(request: Request):
-    """VAPI assistant-request webhook for inbound calls. Resumes prior session if found."""
-    body = await request.json()
-    msg  = body.get("message", {})
-
-    if msg.get("type") != "assistant-request":
-        return {"status": "ignored"}
-
-    caller_phone = msg.get("call", {}).get("customer", {}).get("number", "")
-    session_id   = get_session_id_by_phone(caller_phone) if caller_phone else None
-    session      = get_session(session_id) if session_id else None
-
-    if not session:
-        # Unknown caller — provide a generic assistant
-        logger.info(f"Inbound call from unknown number: {caller_phone}")
-        return {
-            "assistant": {
-                "firstMessage": "Hi, you've reached Kyron Medical. I wasn't able to find your session. Please visit our website to check in and I'll call you right back.",
-                "model": {"provider": "openai", "model": "gpt-4o", "messages": [
-                    {"role": "system", "content": "You are a Kyron Medical assistant. Tell the patient you cannot find their session and direct them to visit the website to start a chat session."}
-                ]},
-                "voice": {"provider": "openai", "voiceId": "alloy"},
-            }
-        }
-
-    # Resume from the voice snapshot saved when the call was initiated
-    snapshot = session.get("voice_snapshot", {})
-    patient  = session.get("patient_info", {})
-
-    doctor_id   = snapshot.get("matched_doctor") or session.get("matched_doctor")
-    doctor      = DOCTORS.get(doctor_id) if doctor_id else None
-    doctor_name = snapshot.get("matched_doctor_name") or (
-        f"{doctor['name']} ({doctor['specialty']})" if doctor else None
-    )
-    available_slots = snapshot.get("available_slots")
-    if not available_slots and doctor and not session.get("booked_slot"):
-        available_slots = [
-            {"date": s["date"], "time": s["time"]}
-            for s in doctor["slots"] if s["status"] == "available"
-        ][:6]
-
-    assistant = build_assistant_config(
-        session_id=session_id,
-        patient=patient,
-        history=snapshot.get("conversation_history", session.get("conversation_history", [])),
-        matched_doctor=doctor_name,
-        booked_slot=snapshot.get("booked_slot") or session.get("booked_slot"),
-        available_slots=available_slots,
-        doctor_info=snapshot.get("doctor_info") or (
-            {k: v for k, v in doctor.items() if k != "slots"} if doctor else None
-        ),
-    )
-
-    # Override first message to acknowledge it's a resumed call
-    first_name = patient.get("first_name", "")
-    assistant["firstMessage"] = (
-        f"Hi {first_name}, welcome back — I'm your Kyron Medical assistant. "
-        "I have your previous session on file. Let's pick up right where we left off."
-        if first_name else
-        "Welcome back to Kyron Medical. I have your previous session on file — let's continue."
-    )
-
-    logger.info(f"Inbound callback from {caller_phone} → resumed session {session_id}")
-    return {"assistant": assistant}
 
 
 # ─── 4. Post-appointment follow-up SMS ───────────────────────────────────────

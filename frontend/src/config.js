@@ -10,3 +10,9 @@ export const ENDPOINTS = {
   book:          `${API_BASE}/api/book`,
   voiceInitiate: `${API_BASE}/api/voice/initiate`,
 }
+
+// Include ngrok bypass header when talking to a ngrok tunnel
+export const API_HEADERS = {
+  'Content-Type': 'application/json',
+  ...(API_BASE.includes('ngrok') && { 'ngrok-skip-browser-warning': 'true' }),
+}

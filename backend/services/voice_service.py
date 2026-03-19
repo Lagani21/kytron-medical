@@ -193,8 +193,8 @@ async def initiate_voice_call(
             "assistant": assistant,
         }
 
-        logger.info(f"VAPI payload firstMessage: {first_message}")
-        logger.info(f"VAPI system_prompt preview: {system_prompt[:300]}")
+        logger.info(f"VAPI payload firstMessage: {assistant['firstMessage']}")
+        logger.info(f"VAPI system_prompt preview: {assistant['model']['messages'][0]['content'][:300]}")
 
         async with httpx.AsyncClient() as client:
             response = await client.post(

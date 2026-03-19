@@ -122,10 +122,10 @@ async def get_ai_response(session_id: str, user_message: str):
     reason_lower = patient.get("reason", "").lower()
     is_refill_reason = "prescription" in reason_lower or "refill" in reason_lower
     refill_state = session.get("refill_state")
-    in_refill_flow = refill_state is not None
+    in_refill_flow = refill_state is not None and refill_state != "complete"
     msg_is_refill = "prescription" in msg_lower or "refill" in msg_lower or "medication refill" in msg_lower
     _non_refill_kw = ["book", "schedule", "appointment", "slot", "available", "hours", "address", "location"]
-    if msg_is_refill or in_refill_flow or (is_refill_reason and not any(kw in msg_lower for kw in _non_refill_kw)):
+    if msg_is_refill or in_refill_flow or (is_refill_reason and refill_state is None and not any(kw in msg_lower for kw in _non_refill_kw)):
 
         # Step 1 — first contact: identity already verified via intake; ask for medication name
         if refill_state is None:

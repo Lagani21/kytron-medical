@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import { ENDPOINTS } from '../config.js'
+import { ENDPOINTS, API_HEADERS } from '../config.js'
 
 let msgCounter = 0
 function nextId() {
@@ -37,7 +37,7 @@ export function useChat(sessionId) {
     try {
       const response = await fetch(ENDPOINTS.chat, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: API_HEADERS,
         body: JSON.stringify({ session_id: sessionId, message: text }),
       })
 

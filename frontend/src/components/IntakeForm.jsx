@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ENDPOINTS } from '../config.js'
+import { ENDPOINTS, API_HEADERS } from '../config.js'
 
 export default function IntakeForm({ onComplete }) {
   const [form, setForm] = useState({
@@ -21,7 +21,7 @@ export default function IntakeForm({ onComplete }) {
     try {
       const res = await fetch(ENDPOINTS.intake, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: API_HEADERS,
         body: JSON.stringify(form),
       })
       const data = await res.json()
