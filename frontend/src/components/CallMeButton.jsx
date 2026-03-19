@@ -26,11 +26,12 @@ export default function CallMeButton({ sessionId, phone }) {
       if (data.status === 'initiated') {
         showToast('success', 'Calling you now — voice AI connected')
       } else {
-        showToast('error', 'Could not place the call. Please try again.')
+        const detail = data.message ? ` (${data.message})` : ''
+        showToast('error', `Could not place the call.${detail}`)
       }
-    } catch {
+    } catch (err) {
       setShowModal(false)
-      showToast('error', 'Could not reach the server. Please try again.')
+      showToast('error', `Could not reach the server: ${err.message}`)
     } finally {
       setCalling(false)
     }

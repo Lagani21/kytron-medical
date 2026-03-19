@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from models import PatientIntake, BookingRequest
-from session_store import create_session, get_session, update_session
+from session_store import create_session, get_session, update_session, register_phone
 from data.doctors import DOCTORS
 from services.ai_service import match_doctor
 import uuid
@@ -29,6 +29,9 @@ async def intake(data: PatientIntake):
             sms_opt_in=data.sms_opt_in,
             intake_complete=True,
         )
+        # Index phone → session so inbound calls can resume this context
+        if data.phone:
+            register_phone(session_id, data.phone)
         return {"session_id": session_id, "message": "Intake complete. You may now chat with the assistant."}
     except Exception as exc:
         return JSONResponse(status_code=500, content={"error": str(exc)})

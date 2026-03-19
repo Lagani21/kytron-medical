@@ -213,6 +213,7 @@ async def get_ai_response(session_id: str, user_message: str):
             if booked:
                 from services.email_service import send_confirmation_email
                 from services.sms_service import send_confirmation_sms
+                from routers.voice import schedule_followup
 
                 patient = session["patient_info"]
                 email_result = await send_confirmation_email(
@@ -226,6 +227,11 @@ async def get_ai_response(session_id: str, user_message: str):
                 if session.get("sms_opt_in"):
                     await send_confirmation_sms(
                         patient["phone"], doctor["name"], slot_date, slot_time
+                    )
+                    # Schedule a follow-up SMS ~24h after the appointment
+                    schedule_followup(
+                        patient["phone"], doctor["name"], slot_date, slot_time,
+                        sms_opt_in=True,
                     )
 
                 if email_result.get("status") in ("sent", "stub"):
@@ -262,6 +268,137 @@ async def get_ai_response(session_id: str, user_message: str):
             ):
                 yield chunk
             return
+
+    # ── Pioneer flows ────────────────────────────────────────────────────────
+
+    # "I'm running late" — patient warns they'll be late for their appointment
+    _LATE_RE = re.compile(r"\brunning late\b|i('m| am) late\b|stuck in traffic|going to be late|might be late|running behind")
+    if _LATE_RE.search(msg_lower):
+        if session.get("booked_slot") and doctor:
+            booked = session["booked_slot"]
+            async for chunk in stream_response(
+                f"No problem! I've noted you may be running late for your {booked.get('date')} appointment "
+                f"at {booked.get('time')} with {doctor['name']}. "
+                f"I'd recommend calling their office directly at {doctor['phone']} to let them know — "
+                "they can usually accommodate a short delay. Is there anything else I can help with?"
+            ):
+                yield chunk
+        else:
+            async for chunk in stream_response(
+                "I'd recommend calling the doctor's office directly to let them know. "
+                "They can usually accommodate a short delay. Would you like me to look up the number?"
+            ):
+                yield chunk
+        return
+
+    # ── FAQ intents ──────────────────────────────────────────────────────────
+
+    # Gratitude / affirmations that have no follow-up intent
+    if any(kw in msg_lower for kw in ["thank", "thanks", "thank you", "perfect", "awesome", "great", "wonderful"]):
+        async for chunk in stream_response(
+            f"You're welcome, {first_name}! Is there anything else I can help you with?"
+        ):
+            yield chunk
+        return
+
+    # Emergency
+    if any(kw in msg_lower for kw in ["emergency", "911", "can't breathe", "cannot breathe", "chest pain", "unconscious", "bleeding heavily"]):
+        async for chunk in stream_response(
+            "If this is a medical emergency, please call 911 immediately or go to your nearest emergency room. "
+            "Do not wait for an appointment."
+        ):
+            yield chunk
+        return
+
+    # Insurance / billing
+    if any(kw in msg_lower for kw in ["insurance", "coverage", "copay", "co-pay", "cost", "price", "billing", "bill", "accept", "covered", "deductible", "out of pocket"]):
+        async for chunk in stream_response(
+            "Kyron Medical accepts most major insurance plans including Aetna, BlueCross BlueShield, Cigna, "
+            "United Health, Medicare, and Medicaid. For specific coverage questions or billing inquiries, "
+            "please call our billing department at (415) 555-0100 or ask at the front desk during your visit."
+        ):
+            yield chunk
+        return
+
+    # Cancel / reschedule
+    if any(kw in msg_lower for kw in ["cancel", "reschedule", "change my appointment", "move my appointment", "postpone"]):
+        if session.get("booked_slot"):
+            booked = session["booked_slot"]
+            async for chunk in stream_response(
+                f"To cancel or reschedule your appointment on {booked.get('date')} at {booked.get('time')}, "
+                f"please call our office directly. "
+                + (f"You can reach {doctor['name']} at {doctor['phone']}." if doctor else
+                   "The phone number is listed on your confirmation.")
+            ):
+                yield chunk
+        else:
+            async for chunk in stream_response(
+                "To cancel or reschedule an appointment, please call the doctor's office directly. "
+                "I can also help you book a new appointment if you'd like."
+            ):
+                yield chunk
+        return
+
+    # What to bring / preparation
+    if any(kw in msg_lower for kw in ["bring", "prepare", "preparation", "what do i need", "first visit", "new patient", "documents", "insurance card", "id card"]):
+        async for chunk in stream_response(
+            "For your appointment, please bring:\n\n"
+            "• A valid photo ID (driver's license or passport)\n"
+            "• Your insurance card\n"
+            "• A list of current medications and dosages\n"
+            "• Any relevant medical records or test results\n"
+            "• Completed new patient forms (sent to your email)\n\n"
+            "Arriving 10–15 minutes early for paperwork is recommended."
+        ):
+            yield chunk
+        return
+
+    # Parking / directions
+    if any(kw in msg_lower for kw in ["park", "parking", "directions", "get there", "transit", "drive", "bus", "subway", "uber", "lyft"]):
+        if doctor:
+            async for chunk in stream_response(
+                f"{doctor['name']}'s office is located at {doctor['office']}. "
+                "Street parking is available nearby, and the building has a validated parking garage on-site. "
+                "Public transit options include BART and Muni — the office is within a 5-minute walk from the nearest station."
+            ):
+                yield chunk
+        else:
+            async for chunk in stream_response(
+                "Once I match you with the right specialist, I can share their address and parking details. "
+                "Could you describe what brings you in today?"
+            ):
+                yield chunk
+        return
+
+    # Wait time
+    if any(kw in msg_lower for kw in ["wait time", "waiting room", "how long will i wait", "long wait", "wait list"]):
+        async for chunk in stream_response(
+            "Typical wait times at Kyron Medical are under 15 minutes for scheduled appointments. "
+            "Walk-in times may vary. If you're running late, please call the office so they can adjust accordingly."
+        ):
+            yield chunk
+        return
+
+    # Doctor specialties / about the doctor
+    if any(kw in msg_lower for kw in ["speciali", "about the doctor", "who is", "tell me about", "doctor do", "what does"]):
+        if doctor:
+            async for chunk in stream_response(
+                f"{doctor['name']} is a {doctor['specialty']} specialist at Kyron Medical. "
+                f"They see patients at {doctor['office']} during {doctor['hours']}. "
+                f"Would you like to book an appointment with them?"
+            ):
+                yield chunk
+        else:
+            async for chunk in stream_response(
+                "Kyron Medical has four specialists:\n\n"
+                "• Dr. Sarah Chen — Cardiology (heart & cardiovascular)\n"
+                "• Dr. Marcus Webb — Orthopedics (bones, joints & muscles)\n"
+                "• Dr. Priya Nair — Dermatology (skin conditions)\n"
+                "• Dr. James Okafor — Neurology (brain & nervous system)\n\n"
+                "Tell me about your symptoms and I'll match you with the right one."
+            ):
+                yield chunk
+        return
 
     # General symptom matching
     if doctor_id:
