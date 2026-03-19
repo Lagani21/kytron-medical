@@ -1,15 +1,15 @@
 import { Mail, MessageSquare } from 'lucide-react'
 
 const SPECIALTY_BADGE = {
-  Cardiology:  { bg: 'rgba(239,68,68,0.15)',   text: '#EF4444',  border: 'rgba(239,68,68,0.3)' },
-  Orthopedics: { bg: 'rgba(245,158,11,0.15)',  text: '#F59E0B',  border: 'rgba(245,158,11,0.3)' },
-  Dermatology: { bg: 'rgba(167,139,250,0.15)', text: '#A78BFA',  border: 'rgba(167,139,250,0.3)' },
-  Neurology:   { bg: 'rgba(96,165,250,0.15)',  text: '#60A5FA',  border: 'rgba(96,165,250,0.3)' },
+  Cardiology:  { bg: 'rgba(239,68,68,0.1)',   text: '#EF4444',  border: 'rgba(239,68,68,0.2)' },
+  Orthopedics: { bg: 'rgba(245,158,11,0.1)',  text: '#F59E0B',  border: 'rgba(245,158,11,0.2)' },
+  Dermatology: { bg: 'rgba(124,58,237,0.1)',  text: '#7C3AED',  border: 'rgba(124,58,237,0.2)' },
+  Neurology:   { bg: 'rgba(37,99,235,0.1)',   text: '#2563EB',  border: 'rgba(37,99,235,0.2)' },
 }
 
 function SpecialtyBadge({ specialty }) {
   const colors = SPECIALTY_BADGE[specialty] || {
-    bg: 'rgba(255,255,255,0.08)', text: 'rgba(255,255,255,0.7)', border: 'rgba(255,255,255,0.15)',
+    bg: 'rgba(0,0,0,0.05)', text: '#475569', border: 'rgba(0,0,0,0.12)',
   }
   return (
     <span style={{
@@ -72,13 +72,13 @@ export default function BookingConfirmation({ bookingData, patientInfo, onReset 
               value={d.doctor_name}
               extra={d.specialty && <SpecialtyBadge specialty={d.specialty} />}
             />
-            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+            <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)' }} />
             <DetailRow label="Date" value={d.date} />
-            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+            <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)' }} />
             <DetailRow label="Time" value={d.time} />
             {d.address && (
               <>
-                <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+                <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)' }} />
                 <DetailRow label="Location" value={d.address} />
               </>
             )}
