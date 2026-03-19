@@ -7,7 +7,7 @@ class PatientIntake(BaseModel):
     dob: str
     phone: str
     email: str
-    reason: str
+    reason: str = ""
     sms_opt_in: bool = False
 
 

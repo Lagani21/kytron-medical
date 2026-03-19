@@ -16,10 +16,21 @@ export default function ChatWindow({ sessionId, patientInfo, onBookingConfirmed 
   useEffect(() => {
     if (!welcomeSent.current && patientInfo) {
       welcomeSent.current = true
+      const reason = patientInfo.reason?.trim().toLowerCase() || ''
+      let welcomeContent
+      if (reason.includes('prescription') || reason.includes('refill') || reason.includes('medication refill')) {
+        welcomeContent = `Hi ${patientInfo.first_name}! I'm your Kyron Medical Assistant. I see you need a prescription refill. I can help get that request to your doctor. Which medication do you need refilled, and who is your prescribing doctor at our practice?`
+      } else if (reason.includes('address') || reason.includes('hours') || reason.includes('location') || reason.includes('office') || reason.includes('where')) {
+        welcomeContent = `Hi ${patientInfo.first_name}! I'm your Kyron Medical Assistant. Looking for office information? I can share addresses, hours, and contact details for any of our specialists. Which doctor or specialty are you looking for?`
+      } else if (reason) {
+        welcomeContent = `Hi ${patientInfo.first_name}! I'm your Kyron Medical Assistant. I understand you're here about: "${patientInfo.reason.trim()}". Let me help you find the right specialist and schedule an appointment. Can you tell me a bit more about what you're experiencing?`
+      } else {
+        welcomeContent = `Hi ${patientInfo.first_name}! I'm your Kyron Medical Assistant. What brings you in today? I can help you schedule an appointment, check on a prescription refill, or look up office information.`
+      }
       addMessage({
         id: `welcome-${Date.now()}`,
         role: 'assistant',
-        content: `Hi ${patientInfo.first_name}! I'm your Kyron Medical Assistant. I understand you're here about: "${patientInfo.reason?.trim()}". Let me help you find the right specialist and schedule an appointment. Can you tell me a bit more about what you're experiencing?`,
+        content: welcomeContent,
         timestamp: new Date(),
         streaming: false,
       })

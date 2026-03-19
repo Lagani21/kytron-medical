@@ -21,6 +21,14 @@ def create_session(session_id: str):
         "booked_slot": None,
         "sms_opt_in": False,
         "intake_complete": False,
+        "refill_state": None,
+        "refill_medication": None,
+        "refill_dosage": None,
+        "refill_prescriber": None,
+        "refill_status": None,
+        "info_flow": False,
+        "no_match_state": None,
+        "voice_snapshot": None,
     }
     return SESSIONS[session_id]
 

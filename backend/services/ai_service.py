@@ -56,6 +56,49 @@ async def stream_response(text: str):
         await asyncio.sleep(0.04)
 
 
+_AFFIRMATIVE_RE = re.compile(
+    r'\b(yes|sure|ok|okay|yeah|yep|please)\b|go ahead|sounds good|show me'
+)
+
+# Maps name/specialty keywords → doctor id
+_DOCTOR_NAME_MAP = {
+    "chen": "chen", "sarah chen": "chen", "dr chen": "chen", "dr. chen": "chen",
+    "cardiology": "chen", "cardiologist": "chen", "heart": "chen",
+    "webb": "webb", "marcus webb": "webb", "dr webb": "webb", "dr. webb": "webb",
+    "orthopedics": "webb", "orthopedic": "webb", "ortho": "webb",
+    "nair": "nair", "priya nair": "nair", "dr nair": "nair", "dr. nair": "nair",
+    "dermatology": "nair", "dermatologist": "nair", "skin": "nair",
+    "okafor": "okafor", "james okafor": "okafor", "dr okafor": "okafor", "dr. okafor": "okafor",
+    "neurology": "okafor", "neurologist": "okafor",
+}
+
+
+def _match_doctor_by_name(text: str) -> str | None:
+    text_lower = text.lower()
+    for keyword, doc_id in _DOCTOR_NAME_MAP.items():
+        if keyword in text_lower:
+            return doc_id
+    return None
+
+
+def _office_card(doctor: dict) -> str:
+    return (
+        f"{doctor['name']} — {doctor['specialty']}\n"
+        f"📍 {doctor['office']}\n"
+        f"🕐 {doctor['hours']}\n"
+        f"📞 {doctor['phone']}"
+    )
+
+
+def _all_offices_response() -> str:
+    lines = ["Here are all of our specialists and their office details:\n"]
+    for doc in DOCTORS.values():
+        lines.append(_office_card(doc))
+        lines.append("")
+    lines.append("Would you like to schedule an appointment with any of them?")
+    return "\n".join(lines)
+
+
 async def get_ai_response(session_id: str, user_message: str):
     session = get_session(session_id)
     msg_lower = user_message.lower()
@@ -75,14 +118,97 @@ async def get_ai_response(session_id: str, user_message: str):
             yield chunk
         return
 
-    # Prescription refill
-    if "prescription" in msg_lower or "refill" in msg_lower or "medication refill" in msg_lower:
-        async for chunk in stream_response(
-            "For prescription refills, please call your doctor's office directly. "
-            "I can help you schedule an in-person appointment if needed."
-        ):
-            yield chunk
-        return
+    # Prescription refill workflow
+    reason_lower = patient.get("reason", "").lower()
+    is_refill_reason = "prescription" in reason_lower or "refill" in reason_lower
+    refill_state = session.get("refill_state")
+    in_refill_flow = refill_state is not None
+    msg_is_refill = "prescription" in msg_lower or "refill" in msg_lower or "medication refill" in msg_lower
+    _non_refill_kw = ["book", "schedule", "appointment", "slot", "available", "hours", "address", "location"]
+    if msg_is_refill or in_refill_flow or (is_refill_reason and not any(kw in msg_lower for kw in _non_refill_kw)):
+
+        # Step 1 — first contact: identity already verified via intake; ask for medication name
+        if refill_state is None:
+            update_session(session_id, refill_state="awaiting_medication")
+            async for chunk in stream_response(
+                f"I can help you with your prescription refill, {first_name}. "
+                f"I have your information on file (name, date of birth, and phone number).\n\n"
+                "What is the name of the medication you need refilled?"
+            ):
+                yield chunk
+            return
+
+        # Step 2 — collect medication name, then ask for dosage
+        if refill_state == "awaiting_medication":
+            update_session(session_id,
+                refill_state="awaiting_dosage",
+                refill_medication=user_message.strip(),
+            )
+            async for chunk in stream_response(
+                f"Got it. What is the dosage for {user_message.strip()}? "
+                "(e.g. 10mg, 500mg, 1 puff — or say \"not sure\" if you don't know)"
+            ):
+                yield chunk
+            return
+
+        # Step 3 — collect dosage, then ask for prescriber
+        if refill_state == "awaiting_dosage":
+            update_session(session_id,
+                refill_state="awaiting_prescriber",
+                refill_dosage=user_message.strip(),
+            )
+            medication = session.get("refill_medication", "your medication")
+            async for chunk in stream_response(
+                f"And who is the prescribing doctor for {medication}? "
+                "Please provide their name or the practice they're associated with."
+            ):
+                yield chunk
+            return
+
+        # Step 4 — collect prescriber, log the request, set expectation, notify
+        if refill_state == "awaiting_prescriber":
+            from services.email_service import send_refill_email
+            from services.sms_service import send_refill_sms
+
+            medication = session.get("refill_medication", "your medication")
+            dosage = session.get("refill_dosage", "not specified")
+            prescriber = user_message.strip()
+
+            update_session(session_id,
+                refill_state="complete",
+                refill_prescriber=prescriber,
+                refill_status="pending_review",
+            )
+
+            # Send notifications
+            await send_refill_email(
+                patient["email"], first_name, medication, dosage, prescriber
+            )
+            if session.get("sms_opt_in"):
+                await send_refill_sms(patient["phone"], first_name, medication)
+
+            sms_line = f"\nText confirmation sent to: {patient['phone']}" if session.get("sms_opt_in") else ""
+            async for chunk in stream_response(
+                f"Your refill request has been logged and is now pending review.\n\n"
+                f"Medication: {medication}\n"
+                f"Dosage: {dosage}\n"
+                f"Prescriber: {prescriber}\n\n"
+                "Your doctor will review the request within 1–2 business days. "
+                "You'll be contacted if any additional information is needed.\n\n"
+                f"Email confirmation sent to: {patient['email']}{sms_line}\n\n"
+                "Is there anything else I can help you with?"
+            ):
+                yield chunk
+            return
+
+        # Already complete — don't re-enter
+        if refill_state == "complete":
+            async for chunk in stream_response(
+                f"Your refill request for {session.get('refill_medication', 'your medication')} is already submitted "
+                "and pending review. Is there anything else I can help you with?"
+            ):
+                yield chunk
+            return
 
     # Try to match a doctor from the current message first; fall back to session cache
     doctor_id = await match_doctor(user_message)
@@ -94,10 +220,6 @@ async def get_ai_response(session_id: str, user_message: str):
     doctor = DOCTORS.get(doctor_id) if doctor_id else None
 
     # Affirmative response when doctor already matched → show slots
-    # Use word-boundary matching so "ok" in "book" doesn't trigger this
-    _AFFIRMATIVE_RE = re.compile(
-        r'\b(yes|sure|ok|okay|yeah|yep|please)\b|go ahead|sounds good|show me'
-    )
     if doctor and _AFFIRMATIVE_RE.search(msg_lower):
         available_slots = [s for s in doctor["slots"] if s["status"] == "available"]
         slots_to_show = available_slots[:5]
@@ -113,18 +235,61 @@ async def get_ai_response(session_id: str, user_message: str):
             yield chunk
         return
 
-    # Office hours / address
-    if any(kw in msg_lower for kw in ["hours", "address", "location", "office", "where"]):
-        if doctor:
+    # Office hours / address workflow
+    info_keywords = ["hours", "address", "location", "office", "where", "directions", "open", "close", "contact", "phone number", "phone", "parking"]
+    in_info_flow = session.get("info_flow")
+
+    booking_keywords = ["book", "schedule", "appointment", "slot", "available", "confirm"]
+    if (any(kw in msg_lower for kw in info_keywords) or in_info_flow) and not any(kw in msg_lower for kw in booking_keywords):
+        # "All" / list all offices
+        if any(kw in msg_lower for kw in ["all", "every", "each", "list"]):
+            async for chunk in stream_response(_all_offices_response()):
+                yield chunk
+            return
+
+        # Try to identify the office: name/specialty match → session's matched doctor → ask
+        target_doctor_id = _match_doctor_by_name(user_message) or doctor_id
+        target_doctor = DOCTORS.get(target_doctor_id) if target_doctor_id else None
+
+        if not target_doctor and not in_info_flow:
+            # No office identified yet — ask which one
+            update_session(session_id, info_flow=True)
+            async for chunk in stream_response(
+                "Which specialist's office are you looking for?\n\n"
+                "• Dr. Sarah Chen — Cardiology\n"
+                "• Dr. Marcus Webb — Orthopedics\n"
+                "• Dr. Priya Nair — Dermatology\n"
+                "• Dr. James Okafor — Neurology\n\n"
+                "Or say \"all\" to see every office at once."
+            ):
+                yield chunk
+            return
+
+        if not target_doctor and in_info_flow:
+            async for chunk in stream_response(_all_offices_response()):
+                yield chunk
+            return
+
+        update_session(session_id, matched_doctor=target_doctor_id, info_flow=True)
+
+        # Classify the specific query type and respond with only what was asked
+        if any(kw in msg_lower for kw in ["hour", "open", "close", "when"]):
+            response = f"{target_doctor['name']} ({target_doctor['specialty']}) is open {target_doctor['hours']}."
+        elif any(kw in msg_lower for kw in ["address", "location", "where", "directions"]):
+            response = f"{target_doctor['name']} ({target_doctor['specialty']}) is located at {target_doctor['office']}."
+        elif any(kw in msg_lower for kw in ["phone", "number", "call", "contact", "reach"]):
+            response = f"You can reach {target_doctor['name']} at {target_doctor['phone']}."
+        elif any(kw in msg_lower for kw in ["park", "parking"]):
             response = (
-                f"Dr. {doctor['name'].split()[-1]}'s office is located at {doctor['office']}. "
-                f"Office hours are {doctor['hours']}. "
-                f"You can also reach them at {doctor['phone']}."
+                f"{target_doctor['name']}'s office at {target_doctor['office']} has validated parking on-site. "
+                "Street parking is also available nearby, and the office is within a 5-minute walk from the nearest BART/Muni station."
             )
         else:
+            # General info request — return full card
             response = (
-                "Could you tell me more about your symptoms so I can match you with the right specialist? "
-                "Then I can share their office details."
+                f"Here are the details for {target_doctor['name']}:\n\n"
+                f"{_office_card(target_doctor)}\n\n"
+                "Would you like to schedule an appointment with them?"
             )
         async for chunk in stream_response(response):
             yield chunk
@@ -135,9 +300,16 @@ async def get_ai_response(session_id: str, user_message: str):
         if not doctor:
             doctor_id = await match_doctor(user_message)
             if not doctor_id:
+                # No doctor matched — show all options per workflow diagram
+                update_session(session_id, no_match_state="offered_list")
                 async for chunk in stream_response(
-                    "I'd like to help you schedule an appointment. Could you describe your symptoms "
-                    "so I can match you with the right specialist?"
+                    "I'd love to help you schedule an appointment. Here are our available specialists — "
+                    "which one sounds right for your needs?\n\n"
+                    "• Dr. Sarah Chen — Cardiology (heart & cardiovascular)\n"
+                    "• Dr. Marcus Webb — Orthopedics (bones, joints & muscles)\n"
+                    "• Dr. Priya Nair — Dermatology (skin conditions)\n"
+                    "• Dr. James Okafor — Neurology (brain & nervous system)\n\n"
+                    "If none of these match your situation, I can arrange a callback from our care team."
                 ):
                     yield chunk
                 return
@@ -400,7 +572,39 @@ async def get_ai_response(session_id: str, user_message: str):
                 yield chunk
         return
 
-    # General symptom matching
+    # General symptom matching / no-match fallback
+    _DECLINE_RE = re.compile(r"\bnone\b|\bno\b|\bneither\b|\bnot interested\b|never mind|not sure|don't know|dont know|unclear")
+    no_match_state = session.get("no_match_state")
+
+    # Patient declining after we showed the doctor list → end / offer callback
+    if no_match_state == "offered_list" and _DECLINE_RE.search(msg_lower):
+        phone = patient.get("phone", "the number on file")
+        async for chunk in stream_response(
+            f"No problem, {first_name}. I can have someone from our care team call you back to help "
+            f"find the right provider. We'll reach you at {phone}.\n\n"
+            "You can also call us directly at (415) 555-0100 during business hours (Mon–Fri, 8am–5pm). "
+            "Is there anything else I can help you with?"
+        ):
+            yield chunk
+        update_session(session_id, no_match_state="ended")
+        return
+
+    # Patient picks a doctor from the list we showed
+    if no_match_state == "offered_list":
+        picked_id = _match_doctor_by_name(user_message)
+        if picked_id:
+            doctor_id = picked_id
+            update_session(session_id, matched_doctor=doctor_id, no_match_state=None)
+            doctor = DOCTORS[doctor_id]
+            available_slots = [s for s in doctor["slots"] if s["status"] == "available"][:5]
+            slot_lines = "\n".join([f"• {s['date']} at {s['time']}" for s in available_slots])
+            async for chunk in stream_response(
+                f"Here are available slots with {doctor['name']} ({doctor['specialty']}):\n\n"
+                f"{slot_lines}\n\nJust click a slot below to book it!"
+            ):
+                yield chunk
+            return
+
     if doctor_id:
         update_session(session_id, matched_doctor=doctor_id)
         doctor = DOCTORS[doctor_id]
@@ -410,10 +614,15 @@ async def get_ai_response(session_id: str, user_message: str):
             f"Would you like to see available appointment slots with {doctor['name']}?"
         )
     else:
+        update_session(session_id, no_match_state="offered_list")
         response = (
-            f"I understand you're experiencing some health concerns, {first_name}. "
-            "To connect you with the right specialist, could you describe your symptoms in more detail? "
-            "For example, are you experiencing any pain, discomfort, or specific issues?"
+            f"I'd like to connect you with the right specialist, {first_name}. "
+            "Here are our available doctors — which one sounds right for your needs?\n\n"
+            "• Dr. Sarah Chen — Cardiology (heart & cardiovascular)\n"
+            "• Dr. Marcus Webb — Orthopedics (bones, joints & muscles)\n"
+            "• Dr. Priya Nair — Dermatology (skin conditions)\n"
+            "• Dr. James Okafor — Neurology (brain & nervous system)\n\n"
+            "If none of these match your situation, I can arrange a callback from our care team."
         )
 
     async for chunk in stream_response(response):

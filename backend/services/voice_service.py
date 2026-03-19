@@ -19,7 +19,8 @@ def _to_e164(phone: str) -> str:
     return f"+{digits}"
 
 
-def _build_system_prompt(patient: dict, history: list, matched_doctor, booked_slot) -> str:
+def _build_system_prompt(patient: dict, history: list, matched_doctor, booked_slot,
+                         available_slots=None, doctor_info=None) -> str:
     name   = f"{patient.get('first_name', '')} {patient.get('last_name', '')}".strip()
     reason = patient.get("reason", "")
 
@@ -29,10 +30,19 @@ def _build_system_prompt(patient: dict, history: list, matched_doctor, booked_sl
     ]
     if matched_doctor:
         context_lines.append(f"Matched specialist: {matched_doctor}")
+    if doctor_info:
+        context_lines.append(f"Office address: {doctor_info.get('office', '')}")
+        context_lines.append(f"Office phone: {doctor_info.get('phone', '')}")
+        context_lines.append(f"Office hours: {doctor_info.get('hours', '')}")
     if booked_slot:
         context_lines.append(
-            f"Appointment already booked: {booked_slot.get('date')} at {booked_slot.get('time')}"
+            f"Appointment ALREADY BOOKED: {booked_slot.get('date')} at {booked_slot.get('time')} — just confirm it."
         )
+    if available_slots:
+        context_lines.append("\nREAL AVAILABLE SLOTS — offer ONLY these, never invent dates/times:")
+        for s in available_slots:
+            context_lines.append(f"  • {s['date']} at {s['time']}")
+        context_lines.append("Do NOT mention any date or time not in this list.")
     if history:
         context_lines.append("\nWeb chat history (pick up from here):")
         for msg in history:
@@ -66,11 +76,19 @@ SAFETY RULES — ABSOLUTE, NON-NEGOTIABLE
 YOUR WORKFLOWS
 ════════════════════════════════════════════
 PRIMARY — APPOINTMENT SCHEDULING:
-- If appointment is already booked: confirm date, time, doctor, and address.
-- If not yet booked: help them select a time and confirm the booking.
+- If appointment is already booked: confirm the date, time, doctor, and address.
+- If not yet booked: offer 3 slots from the REAL AVAILABLE SLOTS list above.
+  Say dates naturally ("Wednesday March 19th at nine AM"). When they pick one, confirm it.
+  NEVER offer a slot not in the list.
 
 PRESCRIPTION REFILLS:
-- Redirect to the office phone directly.
+- If the patient asks about a refill, ask for: (1) the medication name, (2) the dosage, (3) the prescribing doctor.
+  Then tell them: "Your refill request has been logged and is pending review. Your doctor will get back to you within 1-2 business days."
+  Do NOT redirect them to call the office. Handle it here.
+
+OFFICE INFO (hours, address, phone):
+- Look up the relevant specialist from context above and share their address, hours, and phone number directly.
+- If no specialist is matched, list all four specialists and ask which one they need.
 
 LAB / TEST RESULTS:
 - Redirect: "Please contact the office — they'll go through results with you and your doctor."
@@ -80,6 +98,74 @@ GENERAL CONDUCT:
 - Be warm but efficient."""
 
 
+def build_assistant_config(
+    session_id: str,
+    patient: dict,
+    history: list,
+    matched_doctor,
+    booked_slot,
+    available_slots=None,
+    doctor_info=None,
+) -> dict:
+    """Return the VAPI assistant dict. Shared by outbound calls and inbound callbacks."""
+    name = patient.get("first_name", "")
+    system_prompt = _build_system_prompt(
+        patient, history, matched_doctor, booked_slot,
+        available_slots=available_slots, doctor_info=doctor_info,
+    )
+    system_prompt += f"\n\nSESSION_ID: {session_id}"
+
+    if name and matched_doctor:
+        first_message = (
+            f"Hi {name}, I'm your Kyron Medical assistant, picking up right where our chat left off. "
+            "I have your details on file — let me help you from here."
+        )
+    elif name:
+        first_message = (
+            f"Hi {name}, I'm your Kyron Medical assistant, picking up from your web chat. "
+            "How can I help you today?"
+        )
+    else:
+        first_message = "Hi, I'm your Kyron Medical assistant, continuing from your web chat. How can I help you today?"
+
+    return {
+        "firstMessage": first_message,
+        "silenceTimeoutSeconds": 10,
+        "responseDelaySeconds": 0.5,
+        "model": {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "messages": [{"role": "system", "content": system_prompt}],
+        },
+        "voice": {
+            "provider": "openai",
+            "voiceId": "alloy",
+        },
+        "transcriber": {
+            "provider": "deepgram",
+            "model": "nova-2",
+            "language": "en",
+        },
+        "server": {"url": f"{BASE_URL}/api/voice/end-of-call"},
+        "analysisPlan": {
+            "structuredDataPrompt": (
+                "Extract booking details if an appointment was confirmed during this call. "
+                "Return null for any field not mentioned."
+            ),
+            "structuredDataSchema": {
+                "type": "object",
+                "properties": {
+                    "appointment_confirmed": {"type": "boolean"},
+                    "doctor_id":  {"type": "string", "description": "chen, webb, nair, or okafor"},
+                    "date":       {"type": "string", "description": "YYYY-MM-DD"},
+                    "time":       {"type": "string", "description": "e.g. 9:00 AM"},
+                },
+                "required": ["appointment_confirmed"],
+            },
+        },
+    }
+
+
 async def initiate_voice_call(
     phone_number: str,
     session_id: str,
@@ -87,66 +173,24 @@ async def initiate_voice_call(
     patient: dict = None,
     matched_doctor=None,
     booked_slot=None,
+    available_slots=None,
+    doctor_info=None,
 ):
     history = history or []
     patient = patient or {}
 
-    e164          = _to_e164(phone_number)
-    name          = patient.get("first_name", "")
-    system_prompt = _build_system_prompt(patient, history, matched_doctor, booked_slot)
-    system_prompt += f"\n\nSESSION_ID (pass this to book_appointment): {session_id}"
-
-    if name and matched_doctor:
-        first_message = f"Hi {name}, I'm your Kyron Medical assistant, picking up right where our chat left off. I have your details on file — let me help you get that appointment scheduled."
-    elif name:
-        first_message = f"Hi {name}, I'm your Kyron Medical assistant, picking up from your web chat. I just have a couple of quick questions to make sure I match you with the right specialist."
-    else:
-        first_message = "Hi, I'm your Kyron Medical assistant, picking up from your web chat. How can I help you today?"
+    e164      = _to_e164(phone_number)
+    assistant = build_assistant_config(
+        session_id, patient, history, matched_doctor, booked_slot,
+        available_slots=available_slots, doctor_info=doctor_info,
+    )
 
     try:
         payload = {
             "phoneNumberId": VAPI_PHONE_ID,
-            "customer": {
-                "number": e164,
-            },
-            "assistant": {
-                "firstMessage": first_message,
-                "silenceTimeoutSeconds": 10,
-                "responseDelaySeconds": 0.5,
-                "model": {
-                    "provider": "openai",
-                    "model": "gpt-4o",
-                    "messages": [
-                        {"role": "system", "content": system_prompt}
-                    ],
-                },
-                "voice": {
-                    "provider": "openai",
-                    "voiceId": "alloy",
-                },
-                "transcriber": {
-                    "provider": "deepgram",
-                    "model": "nova-2",
-                    "language": "en",
-                },
-                "server": {"url": f"{BASE_URL}/api/voice/end-of-call"},
-                "analysisPlan": {
-                    "structuredDataPrompt": (
-                        "Extract booking details if an appointment was confirmed during this call. "
-                        "Return null for any field not mentioned."
-                    ),
-                    "structuredDataSchema": {
-                        "type": "object",
-                        "properties": {
-                            "appointment_confirmed": {"type": "boolean"},
-                            "doctor_id":  {"type": "string", "description": "chen, webb, nair, or okafor"},
-                            "date":       {"type": "string", "description": "YYYY-MM-DD"},
-                            "time":       {"type": "string", "description": "e.g. 9:00 AM"},
-                        },
-                        "required": ["appointment_confirmed"]
-                    }
-                },
-            },
+            "customer": {"number": e164},
+            "metadata": {"session_id": session_id},
+            "assistant": assistant,
         }
 
         logger.info(f"VAPI payload firstMessage: {first_message}")
