@@ -111,11 +111,6 @@ async def initiate_voice_call(
             },
             "assistantOverrides": {
                 "firstMessage": first_message,
-                "model": {
-                    "messages": [
-                        {"role": "system", "content": system_prompt}
-                    ]
-                },
                 "variableValues": {
                     "session_id":      session_id,
                     "patient_name":    name,

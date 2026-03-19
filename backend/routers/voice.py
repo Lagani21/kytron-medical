@@ -28,7 +28,14 @@ async def voice_initiate(req: VoiceCallRequest):
     session = get_session(req.session_id)
     if not session:
         return JSONResponse(status_code=404, content={"error": "Session not found"})
-    result = initiate_voice_call(req.phone_number, req.session_id)
+    result = await initiate_voice_call(
+        req.phone_number,
+        req.session_id,
+        history=session.get("conversation_history", []),
+        patient=session.get("patient_info", {}),
+        matched_doctor=session.get("matched_doctor"),
+        booked_slot=session.get("booked_slot"),
+    )
     return result
 
 
