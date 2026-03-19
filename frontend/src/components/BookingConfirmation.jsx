@@ -26,9 +26,9 @@ function SpecialtyBadge({ specialty }) {
 function DetailRow({ label, value, extra }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
-      <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: '13px', color: '#94A3B8', flexShrink: 0 }}>{label}</span>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'right' }}>
-        <span style={{ fontSize: '14px', fontWeight: 500, color: 'white' }}>{value}</span>
+        <span style={{ fontSize: '14px', fontWeight: 500, color: '#0F172A' }}>{value}</span>
         {extra}
       </div>
     </div>
@@ -57,10 +57,10 @@ export default function BookingConfirmation({ bookingData, patientInfo, onReset 
           </svg>
         </div>
 
-        <h1 style={{ fontWeight: 700, fontSize: '28px', letterSpacing: '-0.01em', color: 'white', marginBottom: '8px' }}>
+        <h1 style={{ fontWeight: 800, fontSize: '28px', letterSpacing: '-0.02em', color: '#0F172A', marginBottom: '8px' }}>
           You're all set, {patientInfo?.first_name}!
         </h1>
-        <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.5)', marginBottom: '28px' }}>
+        <p style={{ fontSize: '14px', color: '#475569', marginBottom: '28px' }}>
           Your appointment has been confirmed.
         </p>
 
@@ -91,13 +91,13 @@ export default function BookingConfirmation({ bookingData, patientInfo, onReset 
             <div style={{
               display: 'flex', alignItems: 'center', gap: '10px',
               padding: '10px 14px', borderRadius: '8px',
-              background: 'rgba(37,99,235,0.08)',
+              background: 'rgba(37,99,235,0.06)',
               border: '1px solid rgba(37,99,235,0.2)',
             }}>
-              <Mail size={15} color="#60A5FA" style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>
+              <Mail size={15} color="#2563EB" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: '13px', color: '#475569' }}>
                 Confirmation email sent to{' '}
-                <span style={{ color: 'white', fontWeight: 500 }}>{patientInfo.email}</span>
+                <span style={{ color: '#0F172A', fontWeight: 500 }}>{patientInfo.email}</span>
               </span>
             </div>
           )}
@@ -105,13 +105,13 @@ export default function BookingConfirmation({ bookingData, patientInfo, onReset 
             <div style={{
               display: 'flex', alignItems: 'center', gap: '10px',
               padding: '10px 14px', borderRadius: '8px',
-              background: 'rgba(37,99,235,0.08)',
+              background: 'rgba(37,99,235,0.06)',
               border: '1px solid rgba(37,99,235,0.2)',
             }}>
-              <MessageSquare size={15} color="#60A5FA" style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>
+              <MessageSquare size={15} color="#2563EB" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: '13px', color: '#475569' }}>
                 Text confirmation sent to{' '}
-                <span style={{ color: 'white', fontWeight: 500 }}>{patientInfo.phone}</span>
+                <span style={{ color: '#0F172A', fontWeight: 500 }}>{patientInfo.phone}</span>
               </span>
             </div>
           )}

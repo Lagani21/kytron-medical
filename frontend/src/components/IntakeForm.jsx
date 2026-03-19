@@ -43,17 +43,17 @@ export default function IntakeForm({ onComplete }) {
       <div className="text-center mb-8">
         <div className="flex items-center justify-center gap-2 mb-4">
           <span style={{ color: '#2563EB', fontSize: '26px', lineHeight: 1 }}>◆</span>
-          <span style={{ fontWeight: 700, fontSize: '18px', letterSpacing: '0.1em', color: 'white' }}>
+          <span style={{ fontWeight: 700, fontSize: '18px', letterSpacing: '0.1em', color: '#0F172A' }}>
             KYRON
           </span>
-          <span style={{ fontWeight: 400, fontSize: '18px', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.45)' }}>
+          <span style={{ fontWeight: 400, fontSize: '18px', letterSpacing: '0.1em', color: '#94A3B8' }}>
             MEDICAL
           </span>
         </div>
-        <h1 style={{ fontWeight: 700, fontSize: '32px', letterSpacing: '-0.02em', color: 'white', lineHeight: 1.2 }}>
+        <h1 style={{ fontWeight: 800, fontSize: '32px', letterSpacing: '-0.03em', color: '#0F172A', lineHeight: 1.2 }}>
           Patient Check-In
         </h1>
-        <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}>
+        <p style={{ fontSize: '13px', color: '#94A3B8', marginTop: '8px' }}>
           Securely managed by Kyron Medical
         </p>
       </div>
@@ -139,7 +139,7 @@ export default function IntakeForm({ onComplete }) {
               onChange={handleChange}
               style={{ width: '16px', height: '16px', accentColor: '#2563EB', cursor: 'pointer' }}
             />
-            <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.55)' }}>
+            <span style={{ fontSize: '13px', color: '#475569' }}>
               Send me SMS appointment reminders
             </span>
           </label>
@@ -176,7 +176,7 @@ export default function IntakeForm({ onComplete }) {
 const labelStyle = {
   display: 'block',
   fontSize: '13px',
-  color: 'rgba(255,255,255,0.6)',
+  color: '#94A3B8',
   marginBottom: '6px',
   fontWeight: '500',
 }

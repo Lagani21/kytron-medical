@@ -98,7 +98,7 @@ export default function ChatWindow({ sessionId, patientInfo, onBookingConfirmed 
         {/* Left: logo + name */}
         <div className="flex items-center gap-2.5">
           <span style={{ color: '#2563EB', fontSize: '18px', lineHeight: 1 }}>◆</span>
-          <span style={{ fontWeight: 600, fontSize: '14px', color: 'white' }}>
+          <span style={{ fontWeight: 600, fontSize: '14px', color: '#0F172A' }}>
             Kyron Medical Assistant
           </span>
         </div>
@@ -106,7 +106,7 @@ export default function ChatWindow({ sessionId, patientInfo, onBookingConfirmed 
         {/* Center: status */}
         <div className="flex items-center gap-2 mx-auto">
           <div className="status-dot" />
-          <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>Online</span>
+          <span style={{ fontSize: '13px', color: '#475569' }}>Online</span>
         </div>
 
         {/* Right: call me */}
@@ -125,11 +125,12 @@ export default function ChatWindow({ sessionId, patientInfo, onBookingConfirmed 
             <div className="flex items-end gap-2 mb-3 msg-appear">
               <div className="ai-avatar">K</div>
               <div style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: '#FFFFFF',
+                border: '1px solid rgba(0,0,0,0.08)',
                 borderRadius: '18px 18px 18px 4px',
                 padding: '12px 16px',
                 display: 'flex', alignItems: 'center', gap: '5px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
               }}>
                 <span className="typing-dot" />
                 <span className="typing-dot" />
@@ -173,12 +174,12 @@ export default function ChatWindow({ sessionId, patientInfo, onBookingConfirmed 
             aria-label="Send message"
             style={{
               width: '40px', height: '40px', flexShrink: 0,
-              background: (!inputText.trim() || isLoading) ? 'rgba(255,255,255,0.1)' : '#2563EB',
+              background: (!inputText.trim() || isLoading) ? 'rgba(0,0,0,0.08)' : '#2563EB',
               border: 'none', borderRadius: '50%',
               cursor: (!inputText.trim() || isLoading) ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               transition: 'all 0.15s ease',
-              boxShadow: (!inputText.trim() || isLoading) ? 'none' : '0 0 16px rgba(37,99,235,0.4)',
+              boxShadow: (!inputText.trim() || isLoading) ? 'none' : '0 4px 12px rgba(37,99,235,0.3)',
             }}
             onMouseEnter={e => {
               if (inputText.trim() && !isLoading) e.currentTarget.style.background = '#1D4ED8'

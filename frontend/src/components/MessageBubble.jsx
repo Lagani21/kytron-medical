@@ -32,7 +32,7 @@ export default function MessageBubble({ message, onSlotClick }) {
           }}>
             {message.content}
           </div>
-          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', marginTop: '4px', textAlign: 'right' }}>
+          <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px', textAlign: 'right' }}>
             {formatTime(message.timestamp)}
           </div>
         </div>
@@ -45,15 +45,16 @@ export default function MessageBubble({ message, onSlotClick }) {
       <div className="ai-avatar">K</div>
       <div style={{ maxWidth: '72%' }}>
         <div style={{
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          color: 'rgba(255,255,255,0.9)',
+          background: '#FFFFFF',
+          border: '1px solid rgba(0,0,0,0.08)',
+          color: '#0F172A',
           borderRadius: '18px 18px 18px 4px',
           padding: '10px 16px',
           fontSize: '14px',
           lineHeight: '1.5',
           wordBreak: 'break-word',
           whiteSpace: 'pre-wrap',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
         }}>
           {message.content}
           {message.streaming && <span className="stream-cursor" />}
@@ -74,7 +75,7 @@ export default function MessageBubble({ message, onSlotClick }) {
           </div>
         )}
 
-        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', marginTop: '4px' }}>
+        <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>
           {formatTime(message.timestamp)}
         </div>
       </div>

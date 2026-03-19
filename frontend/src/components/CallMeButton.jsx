@@ -50,7 +50,7 @@ export default function CallMeButton({ sessionId, phone }) {
           onClick={(e) => e.target === e.currentTarget && setShowModal(false)}
           style={{
             position: 'fixed', inset: 0, zIndex: 9999,
-            background: 'rgba(0,0,0,0.6)',
+            background: 'rgba(0,0,0,0.3)',
             backdropFilter: 'blur(4px)',
             WebkitBackdropFilter: 'blur(4px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -67,11 +67,11 @@ export default function CallMeButton({ sessionId, phone }) {
               <Phone size={22} color="#2563EB" />
             </div>
 
-            <h3 style={{ fontWeight: 600, fontSize: '20px', color: 'white', marginBottom: '10px' }}>
+            <h3 style={{ fontWeight: 600, fontSize: '20px', color: '#0F172A', marginBottom: '10px' }}>
               Continue by phone
             </h3>
-            <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, marginBottom: '24px' }}>
-              We'll call <span style={{ color: 'white', fontWeight: 500 }}>{phone}</span> and
+            <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '24px' }}>
+              We'll call <span style={{ color: '#0F172A', fontWeight: 500 }}>{phone}</span> and
               your assistant will pick up right where you left off.
             </p>
 
@@ -103,15 +103,15 @@ export default function CallMeButton({ sessionId, phone }) {
         <div style={{
           position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
           zIndex: 10000,
-          background: 'rgba(13,17,41,0.95)',
-          border: `1px solid ${toast.type === 'success' ? 'rgba(37,99,235,0.4)' : 'rgba(239,68,68,0.4)'}`,
+          background: 'rgba(255,255,255,0.95)',
+          border: `1px solid ${toast.type === 'success' ? 'rgba(37,99,235,0.3)' : 'rgba(239,68,68,0.3)'}`,
           borderRadius: '10px',
           padding: '12px 20px',
           fontSize: '14px', fontWeight: 500,
-          color: toast.type === 'success' ? '#60A5FA' : '#F87171',
+          color: toast.type === 'success' ? '#2563EB' : '#EF4444',
           display: 'flex', alignItems: 'center', gap: '8px',
           backdropFilter: 'blur(12px)',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
           whiteSpace: 'nowrap',
         }}>
           {toast.type === 'success'
